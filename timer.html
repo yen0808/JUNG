@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timer</title>
+  <style>
+    /* ── Design tokens ── */
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2c2f3e;
+      --accent: #6c63ff;
+      --accent-dim: #3d3875;
+      --danger: #ff5f5f;
+      --text-primary: #e8eaf6;
+      --text-secondary: #7b7f9e;
+      --btn-outline-bg: transparent;
+      --btn-outline-border: #3a3d52;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f0f2fc;
+        --surface: #ffffff;
+        --border: #dde0f0;
+        --text-primary: #1a1d27;
+        --text-secondary: #5a5d7a;
+        --btn-outline-bg: transparent;
+        --btn-outline-border: #c0c4e0;
+      }
+    }
+
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    /* ── App card ── */
+    .app {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1.25rem;
+      width: 100%;
+      max-width: 480px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 1rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover { color: var(--text-primary); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* ── Panels ── */
+    .panel { display: none; padding: 2rem 1.5rem; }
+    .panel.active { display: block; }
+
+    /* ── Time inputs (countdown) ── */
+    .time-inputs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      margin-bottom: 1.75rem;
+    }
+    .time-inputs label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .time-inputs input[type="number"] {
+      width: 4.5rem;
+      padding: 0.5rem 0.25rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      color: var(--text-primary);
+      font-family: 'Courier New', monospace;
+      font-size: 1.5rem;
+      text-align: center;
+      outline: none;
+      -moz-appearance: textfield;
+      transition: border-color 0.2s;
+    }
+    .time-inputs input[type="number"]::-webkit-inner-spin-button,
+    .time-inputs input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .time-inputs input[type="number"]:focus { border-color: var(--accent); }
+    .time-inputs input[type="number"]:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .time-inputs .unit {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .time-inputs .sep {
+      font-size: 1.75rem;
+      color: var(--text-secondary);
+      margin-top: -0.5rem;
+      user-select: none;
+    }
+
+    /* ── Ring container ── */
+    .ring-container {
+      position: relative;
+      width: 100%;
+      max-width: 240px;
+      margin: 0 auto 1.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .progress-ring {
+      width: 100%;
+      height: auto;
+      transform: rotate(-90deg);
+    }
+    .ring-track {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 10;
+    }
+    .ring-fill {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 628.3;
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 0.2s linear, stroke 0.3s;
+    }
+    .ring-urgent .ring-fill {
+      stroke: var(--danger);
+      animation: pulse-ring 0.6s ease-in-out infinite alternate;
+    }
+    @keyframes pulse-ring {
+      from { opacity: 1; }
+      to   { opacity: 0.4; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ring-fill { transition: none; }
+      .ring-urgent .ring-fill { animation: none; }
+    }
+
+    /* ── Display (large digit clock) ── */
+    .display {
+      position: absolute;
+      font-family: 'Courier New', monospace;
+      font-size: clamp(1.8rem, 8vw, 2.8rem);
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      user-select: none;
+    }
+    .display-standalone {
+      font-family: 'Courier New', monospace;
+      font-size: clamp(2.5rem, 10vw, 4rem);
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      text-align: center;
+      margin-bottom: 1.75rem;
+      user-select: none;
+    }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .btn {
+      flex: 1;
+      min-width: 90px;
+      min-height: 44px;
+      padding: 0.6rem 1rem;
+      border-radius: 0.6rem;
+      border: 1px solid var(--btn-outline-border);
+      background: var(--btn-outline-bg);
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--border);
+    }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn.primary:hover:not(:disabled) {
+      background: #574fd6;
+      border-color: #574fd6;
+    }
+    .btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* ── Alert message ── */
+    .alert-msg {
+      margin-top: 1.25rem;
+      padding: 0.75rem 1rem;
+      background: rgba(255, 95, 95, 0.12);
+      border: 1px solid var(--danger);
+      border-radius: 0.6rem;
+      color: var(--danger);
+      font-weight: 600;
+      text-align: center;
+      font-size: 1rem;
+      animation: fade-in 0.3s ease;
+    }
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Lap list ── */
+    .lap-list {
+      list-style: none;
+      margin-top: 1.5rem;
+      max-height: 220px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border);
+    }
+    .lap-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.55rem 0.25rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+      gap: 0.5rem;
+    }
+    .lap-list li:last-child { border-bottom: none; }
+    .lap-num {
+      color: var(--text-secondary);
+      min-width: 2.5rem;
+      font-weight: 600;
+    }
+    .lap-split {
+      font-family: 'Courier New', monospace;
+      flex: 1;
+      text-align: center;
+    }
+    .lap-total {
+      font-family: 'Courier New', monospace;
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      text-align: right;
+    }
+    .lap-list-header {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.4rem 0.25rem 0;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    @media (max-width: 380px) {
+      .panel { padding: 1.5rem 1rem; }
+      .lap-list { font-size: 0.8rem; }
+      .time-inputs input[type="number"] { width: 3.8rem; font-size: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- Tab bar -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="countdown">倒數計時</button>
+      <button class="tab-btn" data-tab="stopwatch">碼錶</button>
+    </nav>
+
+    <!-- ── Countdown panel ── -->
+    <section id="panel-countdown" class="panel active">
+
+      <div class="time-inputs">
+        <label>
+          <input type="number" id="cd-h" min="0" max="99" value="0" placeholder="0">
+          <span class="unit">時</span>
+        </label>
+        <span class="sep">:</span>
+        <label>
+          <input type="number" id="cd-m" min="0" max="59" value="5" placeholder="0">
+          <span class="unit">分</span>
+        </label>
+        <span class="sep">:</span>
+        <label>
+          <input type="number" id="cd-s" min="0" max="59" value="0" placeholder="0">
+          <span class="unit">秒</span>
+        </label>
+      </div>
+
+      <div class="ring-container" id="cd-ring-container">
+        <svg class="progress-ring" viewBox="0 0 220 220" aria-hidden="true">
+          <circle class="ring-track" cx="110" cy="110" r="100"/>
+          <circle class="ring-fill"  cx="110" cy="110" r="100" id="cd-ring-fill"/>
+        </svg>
+        <div class="display" id="cd-display">00:05:00</div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" id="cd-start-pause">開始</button>
+        <button class="btn" id="cd-reset">重置</button>
+      </div>
+
+      <div class="alert-msg" id="cd-alert" hidden>⏰ 時間到！</div>
+
+    </section>
+
+    <!-- ── Stopwatch panel ── -->
+    <section id="panel-stopwatch" class="panel">
+
+      <div class="display-standalone" id="sw-display">00:00:00.0</div>
+
+      <div class="controls">
+        <button class="btn primary" id="sw-start-pause">開始</button>
+        <button class="btn" id="sw-lap" disabled>計圈</button>
+        <button class="btn" id="sw-reset" disabled>重置</button>
+      </div>
+
+      <div id="sw-lap-section" hidden>
+        <div class="lap-list-header">
+          <span>圈數</span><span>圈速</span><span>總時間</span>
+        </div>
+        <ol class="lap-list" id="sw-lap-list"></ol>
+      </div>
+
+    </section>
+
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    const CIRCUMFERENCE = 2 * Math.PI * 100; // ≈ 628.318
+
+    /* ── Utility ── */
+    function pad(n) { return String(Math.floor(Math.abs(n))).padStart(2, '0'); }
+
+    function formatCountdown(ms) {
+      const totalSec = Math.max(0, Math.ceil(ms / 1000));
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      return pad(h) + ':' + pad(m) + ':' + pad(s);
+    }
+
+    function formatStopwatch(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const tenths = Math.floor((ms % 1000) / 100);
+      return pad(h) + ':' + pad(m) + ':' + pad(s) + '.' + tenths;
+    }
+
+    function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
+
+    /* ── Audio alert ── */
+    function playBeep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        function beep(delay) {
+          setTimeout(function () {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.5, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.7);
+          }, delay);
+        }
+        beep(0); beep(400); beep(800);
+      } catch (e) { /* AudioContext not available */ }
+    }
+
+    /* ── Tab switching ── */
+    var tabBtns = document.querySelectorAll('.tab-btn');
+    tabBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        tabBtns.forEach(function (b) { b.classList.remove('active'); });
+        document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    /* ══════════════════════════════════
+       COUNTDOWN TIMER
+    ══════════════════════════════════ */
+    var cdState = {
+      totalMs: 0,
+      remaining: 0,
+      alreadyElapsed: 0,
+      startTime: null,
+      running: false,
+      intervalId: null,
+      alertFired: false
+    };
+
+    var cdDisplay       = document.getElementById('cd-display');
+    var cdRingFill      = document.getElementById('cd-ring-fill');
+    var cdRingContainer = document.getElementById('cd-ring-container');
+    var cdStartPause    = document.getElementById('cd-start-pause');
+    var cdReset         = document.getElementById('cd-reset');
+    var cdAlert         = document.getElementById('cd-alert');
+    var cdInputH        = document.getElementById('cd-h');
+    var cdInputM        = document.getElementById('cd-m');
+    var cdInputS        = document.getElementById('cd-s');
+
+    cdRingFill.style.strokeDasharray  = CIRCUMFERENCE;
+    cdRingFill.style.strokeDashoffset = 0;
+
+    function cdReadInputs() {
+      var h = clamp(parseInt(cdInputH.value) || 0, 0, 99);
+      var m = clamp(parseInt(cdInputM.value) || 0, 0, 59);
+      var s = clamp(parseInt(cdInputS.value) || 0, 0, 59);
+      return (h * 3600 + m * 60 + s) * 1000;
+    }
+
+    function cdUpdateDisplay(ms) {
+      cdDisplay.textContent = formatCountdown(ms);
+    }
+
+    function cdUpdateRing(remainingMs, totalMs) {
+      var ratio = totalMs > 0 ? remainingMs / totalMs : 0;
+      ratio = Math.max(0, Math.min(1, ratio));
+      cdRingFill.style.strokeDashoffset = CIRCUMFERENCE * (1 - ratio);
+    }
+
+    function cdSetUrgent(on) {
+      if (on) cdRingContainer.classList.add('ring-urgent');
+      else    cdRingContainer.classList.remove('ring-urgent');
+    }
+
+    function cdSetInputsDisabled(disabled) {
+      cdInputH.disabled = disabled;
+      cdInputM.disabled = disabled;
+      cdInputS.disabled = disabled;
+    }
+
+    function cdTick() {
+      var elapsed   = Date.now() - cdState.startTime + cdState.alreadyElapsed;
+      var remaining = cdState.totalMs - elapsed;
+      cdState.remaining = remaining;
+
+      cdUpdateDisplay(remaining);
+      cdUpdateRing(remaining, cdState.totalMs);
+      cdSetUrgent(remaining <= 10000 && remaining > 0);
+
+      if (remaining <= 0 && !cdState.alertFired) {
+        cdState.alertFired = true;
+        cdStop();
+        cdAlert.hidden = false;
+        playBeep();
+        // Flash document title
+        var origTitle = document.title;
+        var flashes = 0;
+        var flashInterval = setInterval(function () {
+          document.title = flashes % 2 === 0 ? '⏰ 時間到！' : origTitle;
+          if (++flashes >= 10) { clearInterval(flashInterval); document.title = origTitle; }
+        }, 500);
+      }
+    }
+
+    function cdStop() {
+      clearInterval(cdState.intervalId);
+      cdState.intervalId = null;
+      cdState.running = false;
+      cdStartPause.textContent = '繼續';
+      cdStartPause.classList.add('primary');
+    }
+
+    cdStartPause.addEventListener('click', function () {
+      if (cdState.alertFired) return; // must reset first
+
+      if (!cdState.running) {
+        // Fresh start or resume
+        if (cdState.totalMs === 0) {
+          // First start — read inputs
+          var total = cdReadInputs();
+          if (total === 0) return;
+          cdState.totalMs      = total;
+          cdState.remaining    = total;
+          cdState.alreadyElapsed = 0;
+          cdSetInputsDisabled(true);
+          cdAlert.hidden = true;
+        }
+        cdState.startTime = Date.now();
+        cdState.running   = true;
+        cdStartPause.textContent = '暫停';
+        cdState.intervalId = setInterval(cdTick, 200);
+        cdTick();
+      } else {
+        // Pause
+        cdState.alreadyElapsed = cdState.totalMs - cdState.remaining;
+        cdStop();
+        cdStartPause.textContent = '繼續';
+      }
+    });
+
+    cdReset.addEventListener('click', function () {
+      clearInterval(cdState.intervalId);
+      cdState.totalMs        = 0;
+      cdState.remaining      = 0;
+      cdState.alreadyElapsed = 0;
+      cdState.startTime      = null;
+      cdState.running        = false;
+      cdState.intervalId     = null;
+      cdState.alertFired     = false;
+
+      cdSetInputsDisabled(false);
+      cdSetUrgent(false);
+      cdAlert.hidden = true;
+      cdStartPause.textContent = '開始';
+      cdStartPause.classList.add('primary');
+
+      // Restore display from current inputs
+      var ms = cdReadInputs();
+      cdUpdateDisplay(ms);
+      cdRingFill.style.strokeDashoffset = 0;
+    });
+
+    // Update display live when inputs change (while not running)
+    [cdInputH, cdInputM, cdInputS].forEach(function (input) {
+      input.addEventListener('input', function () {
+        if (!cdState.running && cdState.totalMs === 0) {
+          cdUpdateDisplay(cdReadInputs());
+        }
+      });
+    });
+
+    // Initial display
+    cdUpdateDisplay(cdReadInputs());
+
+
+    /* ══════════════════════════════════
+       STOPWATCH
+    ══════════════════════════════════ */
+    var swState = {
+      running: false,
+      startTime: null,
+      elapsed: 0,     // ms accumulated before last pause
+      laps: [],       // [{ lapMs, totalMs }]
+      intervalId: null
+    };
+
+    var swDisplay    = document.getElementById('sw-display');
+    var swStartPause = document.getElementById('sw-start-pause');
+    var swLap        = document.getElementById('sw-lap');
+    var swReset      = document.getElementById('sw-reset');
+    var swLapList    = document.getElementById('sw-lap-list');
+    var swLapSection = document.getElementById('sw-lap-section');
+
+    function swGetTotal() {
+      return swState.elapsed + (swState.running ? Date.now() - swState.startTime : 0);
+    }
+
+    function swTick() {
+      swDisplay.textContent = formatStopwatch(swGetTotal());
+    }
+
+    swStartPause.addEventListener('click', function () {
+      if (!swState.running) {
+        swState.startTime = Date.now();
+        swState.running   = true;
+        swStartPause.textContent = '暫停';
+        swLap.disabled   = false;
+        swReset.disabled = false;
+        swState.intervalId = setInterval(swTick, 100);
+        swTick();
+      } else {
+        swState.elapsed += Date.now() - swState.startTime;
+        clearInterval(swState.intervalId);
+        swState.intervalId = null;
+        swState.running = false;
+        swStartPause.textContent = '繼續';
+        swLap.disabled = true; // can't lap while paused
+      }
+    });
+
+    swLap.addEventListener('click', function () {
+      if (!swState.running) return;
+      var totalMs = swGetTotal();
+      var lastTotal = swState.laps.length > 0 ? swState.laps[swState.laps.length - 1].totalMs : 0;
+      var lapMs = totalMs - lastTotal;
+      swState.laps.push({ lapMs: lapMs, totalMs: totalMs });
+
+      var li = document.createElement('li');
+      var lapNum = swState.laps.length;
+
+      var numSpan   = document.createElement('span');
+      numSpan.className = 'lap-num';
+      numSpan.textContent = 'L' + lapNum;
+
+      var splitSpan = document.createElement('span');
+      splitSpan.className = 'lap-split';
+      splitSpan.textContent = formatStopwatch(lapMs);
+
+      var totalSpan = document.createElement('span');
+      totalSpan.className = 'lap-total';
+      totalSpan.textContent = formatStopwatch(totalMs);
+
+      li.appendChild(numSpan);
+      li.appendChild(splitSpan);
+      li.appendChild(totalSpan);
+      swLapList.prepend(li);
+      swLapSection.hidden = false;
+    });
+
+    swReset.addEventListener('click', function () {
+      clearInterval(swState.intervalId);
+      swState.running    = false;
+      swState.startTime  = null;
+      swState.elapsed    = 0;
+      swState.laps       = [];
+      swState.intervalId = null;
+
+      swDisplay.textContent = '00:00:00.0';
+      swStartPause.textContent = '開始';
+      swLap.disabled   = true;
+      swReset.disabled = true;
+      swLapList.innerHTML = '';
+      swLapSection.hidden = true;
+    });
+
+  })();
+  </script>
+</body>
+</html>
